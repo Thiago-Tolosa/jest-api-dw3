@@ -1,0 +1,819 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+database/
+  foreign-key-violation.test.ts
+  unique-violation.test.ts
+modules/
+  courses/
+    courses.repository.test.ts
+    courses.service.test.ts
+  enrollments/
+    enrollments.repository.test.ts
+    enrollments.service.test.ts
+  students/
+    students.repository.test.ts
+    students.service.test.ts
+validation.test.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="database/foreign-key-violation.test.ts">
+import { describe, it, expect } from "@jest/globals";
+import { isForeignKeyViolation } from '../../src/database/foreign-key-violation';
+
+describe("isForeignKeyViolation", () => {
+    it("deve retornar true se for válido", () => {
+        expect(isForeignKeyViolation({ code: "23503" })).toBe(true);
+    })
+    it.each([null, undefined, "23505", 23503, {}, { code: "outro" }])(
+        "deve rejeitar a entrada inválida: %p",
+        (entradaInvalida) => {
+            expect(isForeignKeyViolation(entradaInvalida)).toBe(false);
+        }
+    );
+});
+</file>
+
+<file path="database/unique-violation.test.ts">
+import { describe, it, expect } from "@jest/globals";
+import { isUniqueViolation } from '../../src/database/unique-violation';
+
+describe("isUniqueViolation", () => {
+    it("deve retornar true se for válido", () => {
+        expect(isUniqueViolation({ code: "23505" })).toBe(true);
+    })
+    it.each([null, undefined, "23505", 23503, {}, { code: "outro" }])(
+        "deve rejeitar a entrada inválida: %p",
+        (entradaInvalida) => {
+            expect(isUniqueViolation(entradaInvalida)).toBe(false);
+        }
+    );
+});
+</file>
+
+<file path="modules/courses/courses.repository.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { CourseRepository, PgCourseRepository } from '../../../src/modules/courses/courses.repository';
+
+interface IFakeRow {
+    id: number,
+    name: string
+}
+let mockDb: { query: jest.Mock<(...args: any[]) => Promise<any>> }; //Unico jeito q consegui fazer os tipos funcionarem
+let repository: CourseRepository;
+
+beforeEach(() => {
+    mockDb = { query: jest.fn() };
+    repository = new PgCourseRepository(mockDb as any);
+});
+
+describe("PgCourseRepository", () => {
+    it("deve inserir um curso no banco e retornar o registro criado", async () => {
+        const fakeRow: IFakeRow = { id: 1, name: "Qualidade" };
+        mockDb.query.mockResolvedValue({ rows: [fakeRow] });
+
+        const result = await repository.create({ name: "Qualidade" });
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "INSERT INTO courses (name) VALUES ($1) RETURNING id, name",
+            ["Qualidade"]
+        );
+    });
+
+    it("deve retornar todos os cursos registrados no banco", async () => {
+        const fakeRow: IFakeRow[] = [{ id: 1, name: "Qualidade" }, { id: 2, name: "Outra Qualidade" }];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT id, name FROM courses ORDER BY id"
+        );
+    });
+
+    it("deve retornar um array vazio quando rows é [] e se chama findAll", async () => {
+        const fakeRow: IFakeRow[] = [];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT id, name FROM courses ORDER BY id"
+        );
+    });
+
+    it("deve retornar apenas o primeiro registro do banco", async () => {
+        const fakeRow: IFakeRow[] = [{ id: 7, name: "Qualidade" }, { id: 2, name: "Outra Qualidade" }];
+        mockDb.query.mockResolvedValue({ rows: [fakeRow[0]] });
+
+        const result = await repository.findOne(7);
+
+        expect(result).toEqual(fakeRow[0]);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT id, name FROM courses WHERE id = $1",
+            [7]
+        );
+    });
+
+    it("deve retornar undefined vazio quando rows é [] e se chama findOne", async () => {
+        const fakeRow: IFakeRow[] = [];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findOne(7);
+
+        expect(result).toEqual(undefined);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT id, name FROM courses WHERE id = $1",
+            [7]
+        );
+    });
+
+    it.each([
+        ["findAll", () => repository.findAll()],
+        ["findOne", () => repository.findOne(7)],
+        ["create", () => repository.create({ name: "Qualidade" })]
+    ])(
+        "deve propagar a mesma instância de erro lançada por db.query no método %s",
+        async (nomeMetodo, executarMetodo) => {
+            const error = new Error("Erro");
+            mockDb.query.mockRejectedValue(error);
+
+            await expect(executarMetodo()).rejects.toBe(error);
+        }
+    );
+});
+</file>
+
+<file path="modules/courses/courses.service.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { CourseRepository } from '../../../src/modules/courses/courses.repository';
+import { CoursesService } from '../../../src/modules/courses/courses.service';
+
+let mockRepository: jest.Mocked<CourseRepository>;
+let service: CoursesService;
+
+beforeEach(() => {
+    mockRepository = {
+        create: jest.fn(),
+        findAll: jest.fn(),
+        findOne: jest.fn()
+    };
+    service = new CoursesService(mockRepository);
+});
+
+describe("CoursesService.create", () => {
+
+    it("deve chamar repository.create com a entrada correta, uma única vez", async () => {
+        const input = { name: "Qualidade" };
+        mockRepository.create.mockResolvedValue({ id: 1, name: "Qualidade" });
+        const result = await service.create(input);
+        expect(result).toEqual({ id: 1, name: "Qualidade" });
+        expect(mockRepository.create).toHaveBeenCalledWith(input);
+        expect(mockRepository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([null, {}, { name: "A" }])(
+        "deve rejeitar a entrada inválida: %p com erro 400, e não chamar repository.create",
+        async (entradaInvalida) => {
+            await expect(service.create(entradaInvalida)).rejects.toMatchObject(
+                {
+                    statusCode: 400
+                }
+            );
+            expect(mockRepository.create).not.toHaveBeenCalled();
+        }
+    );
+
+    it("deve rejeitar a entrada com código inválido", async () => {
+        mockRepository.create.mockRejectedValue({ code: "23505" });
+        await expect(service.create({ name: "Qualidade" })).rejects.toMatchObject(
+            {
+                statusCode: 409
+            }
+        );
+    });
+
+    it("deve propagar a mesma instância de erro lançada pelo repository.create", async () => {
+        const error = new Error("Erro");
+        mockRepository.create.mockRejectedValue(error);
+        await expect(service.create({ name: "Qualidade" })).rejects.toBe(error);
+    });
+
+    it("deve criar um curso aceitando campos extras, mas apenas passando 'name' para o repository", async () => {
+        const input = { name: "Qualidade", extra: true };
+        mockRepository.create.mockResolvedValue({ id: 1, name: "Qualidade" });
+        await service.create(input);
+        expect(mockRepository.create).toHaveBeenCalledWith({ name: "Qualidade" });
+    });
+});
+
+describe("CoursesService.findAll", () => {
+    it("deve chamar repository.findAll e retornar o resultado", async () => {
+        const cursos = [{ id: 1, name: "Qualidade" }, { id: 2, name: "Gestão" }];
+        mockRepository.findAll.mockResolvedValue(cursos);
+        const result = await service.findAll();
+        expect(result).toEqual(cursos);
+        expect(mockRepository.findAll).toHaveBeenCalledTimes(1);
+    });
+
+    it("deve propagar a mesma instância de erro lançada pelo repository.findAll", async () => {
+        const error = new Error("Erro");
+        mockRepository.findAll.mockRejectedValue(error);
+        await expect(service.findAll()).rejects.toBe(error);
+    }) 
+});
+
+describe("CoursesService.findOne", () => {
+    it("deve chamar repository.findOne com o id correto, e retornar o resultado", async () => {
+        const curso = { id: 123, name: "Qualidade" };
+        mockRepository.findOne.mockResolvedValue(curso);
+        const result = await service.findOne(123);
+        expect(result).toEqual(curso);
+        expect(mockRepository.findOne).toHaveBeenCalledWith(123);
+    });
+
+    it("deve rejeitar a entrada inválida com erro 404", async () => {
+        mockRepository.findOne.mockResolvedValue(undefined);
+        await expect(service.findOne(123)).rejects.toMatchObject({
+            statusCode: 404
+        });
+    });
+
+    it("deve rejeitar a entrada inválida com erro 400, e não chamar repository.findOne", async () => {
+        await expect(service.findOne(0)).rejects.toMatchObject({
+            statusCode: 400
+        });
+        expect(mockRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it("deve propagar a mesma instância de erro lançada pelo repository.findOne", async () => {
+        const error = new Error("Erro");
+        mockRepository.findOne.mockRejectedValue(error);
+        await expect(service.findOne(123)).rejects.toBe(error);
+    })
+
+    it("deve buscar um curso utilizando spy no método findOne do repositório e verificar se foi chamado com o id correto", async () => {
+        const stubRepository = {
+            create: async () => ({ id: 1, name: "Qualidade" }),
+            findAll: async () => [],
+            findOne: async (id: number) => ({ id, name: "Qualidade" })
+        };
+
+        const spyFindOne = jest.spyOn(stubRepository, 'findOne')
+            .mockResolvedValue({ id: 1, name: "Qualidade" });
+
+        const customService = new CoursesService(stubRepository);
+
+        const result = await customService.findOne(1);
+        expect(result).toEqual({ id: 1, name: "Qualidade" });
+        expect(spyFindOne).toHaveBeenCalledWith(1);
+    });
+});
+</file>
+
+<file path="modules/enrollments/enrollments.repository.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { EnrollmentRepository, PgEnrollmentRepository } from '../../../src/modules/enrollments/enrollments.repository';
+
+const date = new Date()
+
+interface IFakeRow {
+    studentRa: number,
+    courseId: number,
+    enrolledAt: Date
+}
+
+interface Iinput {
+    studentRa: number,
+    courseId: number,
+}
+
+let mockDb: { query: jest.Mock<(...args: any[]) => Promise<any>> }; //Unico jeito q consegui fazer os tipos funcionarem
+let repository: EnrollmentRepository;
+
+beforeEach(() => {
+    mockDb = { query: jest.fn() };
+    repository = new PgEnrollmentRepository(mockDb as any);
+});
+
+describe("PgEnrollmentRepository", () => {
+    it("deve inserir uma matrícula no banco e retornar o registro criado", async () => {
+        const fakeRow: IFakeRow = { studentRa: 123, courseId: 7, enrolledAt: date };
+        const input: Iinput = { studentRa: 123, courseId: 7 }
+        mockDb.query.mockResolvedValue({ rows: [fakeRow] });
+
+        const result = await repository.create(input.studentRa, input.courseId);
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            `INSERT INTO enrollments (student_ra, course_id) VALUES ($1, $2)
+         RETURNING student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"`,
+            [123, 7]
+        );
+    });
+
+
+    it("deve retornar todas as matriculas registradas no banco", async () => {
+        const fakeRow: IFakeRow[] = [{ studentRa: 123, courseId: 7, enrolledAt: date }, { studentRa: 132, courseId: 2, enrolledAt: date }];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments ORDER BY student_ra, course_id`
+        );
+    });
+
+    it("deve retornar um array vazio quando rows é [] e se chama o findAll", async () => {
+        const fakeRow: IFakeRow[] = [];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments ORDER BY student_ra, course_id`
+        );
+    });
+
+    it("deve retornar apenas o primeiro registro do banco", async () => {
+        const fakeRow: IFakeRow[] = [{ studentRa: 123, courseId: 7, enrolledAt: date }, { studentRa: 132, courseId: 2, enrolledAt: date }];
+        mockDb.query.mockResolvedValue({ rows: [fakeRow[0]] });
+
+        const result = await repository.findOne(123, 7);
+
+        expect(result).toEqual(fakeRow[0]);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments WHERE student_ra = $1 AND course_id = $2`,
+            [123, 7]
+        );
+    });
+
+    it("deve retornar undefined quando rows é [] e se chama findOne", async () => {
+        const fakeRow: IFakeRow[] = [];
+
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findOne(123, 7);
+
+        expect(result).toBeUndefined();
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments WHERE student_ra = $1 AND course_id = $2`,
+            [123, 7]
+        );
+    });
+
+    it.each([
+        ["findAll", () => repository.findAll()],
+        ["findOne", () => repository.findOne(123, 7)],
+        ["create", () => repository.create(123, 1)]
+    ])(
+        "deve propagar a mesma instância de erro lançada por db.query no método %s",
+        async (nomeMetodo, executarMetodo) => {
+            const error = new Error("Erro");
+            mockDb.query.mockRejectedValue(error);
+
+            await expect(executarMetodo()).rejects.toBe(error);
+        }
+    );
+});
+</file>
+
+<file path="modules/enrollments/enrollments.service.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { EnrollmentRepository } from '../../../src/modules/enrollments/enrollments.repository';
+import { EnrollmentsService } from '../../../src/modules/enrollments/enrollments.service';
+
+let mockRepository: jest.Mocked<EnrollmentRepository>;
+let service: EnrollmentsService;
+const date = new Date()
+
+beforeEach(() => {
+    mockRepository = {
+        create: jest.fn(),
+        findAll: jest.fn(),
+        findOne: jest.fn()
+    };
+    service = new EnrollmentsService(mockRepository);
+});
+
+describe("EnrollmentsService.create", () => {
+
+    it("deve chamar repository.create com a entrada e retorno corretos", async () => {
+        const input = { studentRa: 123, courseId: 1 };
+        mockRepository.create.mockResolvedValue({ studentRa: 123, courseId: 1, enrolledAt: date });
+        const result = await service.create(input);
+        expect(result).toEqual({ studentRa: 123, courseId: 1, enrolledAt: date });
+        expect(mockRepository.create).toHaveBeenCalledWith(input.studentRa, input.courseId);
+    });
+
+    it.each([{ studentRa: 0, courseId: 1 }, { studentRa: 123, courseId: 0 }])(
+        "deve rejeitar a entrada inválida: %p com erro 400, e não chamar repository.create",
+        async (entradaInvalida) => {
+            await expect(service.create(entradaInvalida)).rejects.toMatchObject(
+                {
+                    statusCode: 400
+                }
+            );
+            expect(mockRepository.create).not.toHaveBeenCalled();
+        }
+    );
+
+    it("deve retornar erro 404 se aluno ou disciplina não existir", async () => {
+        mockRepository.create.mockRejectedValue({ code: "23503" });
+        await expect(service.create({ studentRa: 123, courseId: 1 })).rejects.toMatchObject(
+            {
+                statusCode: 404
+            }
+        );
+    });
+
+    it("deve rejeitar a matricula com erro 409 se a matricula for duplicada", async () => {
+        mockRepository.create.mockRejectedValue({ code: "23505" });
+        await expect(service.create({ studentRa: 123, courseId: 1 })).rejects.toMatchObject(
+            {
+                statusCode: 409
+            }
+        );
+    });
+
+    it("deve propagar a mesma instância de erro lançada pelo repository.create", async () => {
+            const error = new Error("Erro");
+            mockRepository.create.mockRejectedValue(error);
+            await expect(service.create({ studentRa: 123, courseId: 1 })).rejects.toBe(error);
+        });
+});
+
+describe("EnrollmentsService.findAll", () => {
+    it("deve chamar repository.findAll e retornar o resultado", async () => {
+        const estudantes = [{ studentRa: 123, courseId: 1, enrolledAt: date }, { studentRa: 132, courseId: 2, enrolledAt: date }];
+        mockRepository.findAll.mockResolvedValue(estudantes);
+        const result = await service.findAll();
+        expect(result).toEqual(estudantes);
+        expect(mockRepository.findAll).toHaveBeenCalledWith();
+        expect(mockRepository.findAll).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("EnrollmentsService.findOne", () => {
+    it("deve chamar repository.findOne com o id correto, e retornar o resultado", async () => {
+        const estudante = { studentRa: 123, courseId: 1, enrolledAt: date };
+        mockRepository.findOne.mockResolvedValue(estudante);
+        const result = await service.findOne(123, 1);
+        expect(result).toEqual(estudante);
+        expect(mockRepository.findOne).toHaveBeenCalledTimes(1);
+        expect(mockRepository.findOne).toHaveBeenCalledWith(123, 1);
+    });
+
+    it("deve chamar repository.findOne, e retornar erro 404 ao receber undefined", async () => {
+        mockRepository.findOne.mockResolvedValue(undefined);
+        const input: number[] = [123, 1]
+        await expect(service.findOne(input[0], input[1])).rejects.toMatchObject({
+            statusCode: 404,
+            message: "Matrícula não encontrada."
+        });
+        expect(mockRepository.findOne).toHaveBeenCalledWith(input[0], input[1])
+    });
+});
+</file>
+
+<file path="modules/students/students.repository.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { StudentRepository, PgStudentRepository } from '../../../src/modules/students/students.repository';
+
+interface IFakeRow {
+    ra: number,
+    name: string
+}
+let mockDb: { query: jest.Mock<(...args: any[]) => Promise<any>> }; //Unico jeito q consegui fazer os tipos funcionarem
+let repository: StudentRepository;
+
+beforeEach(() => {
+    mockDb = { query: jest.fn() };
+    repository = new PgStudentRepository(mockDb as any);
+});
+
+describe("PgCourseRepository", () => {
+    it("deve inserir um aluno no banco e retornar o registro criado", async () => {
+        const fakeRow: IFakeRow = { ra: 123, name: "Eloah" };
+        mockDb.query.mockResolvedValue({ rows: [fakeRow] });
+
+        const result = await repository.create({ ra: 123, name: "Eloah" });
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "INSERT INTO students (ra, name) VALUES ($1, $2) RETURNING ra, name",
+            [123, "Eloah"]
+        );
+    });
+
+    it("deve retornar todos os alunos registrados no banco", async () => {
+        const fakeRow: IFakeRow[] = [{ ra: 123, name: "Eloah" }, { ra: 132, name: "Thiago" }];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT ra, name FROM students ORDER BY name"
+        );
+    });
+
+    it("deve retornar um array vazio quando rows é [] e se chama findAll", async () => {
+        const fakeRow: IFakeRow[] = [];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findAll();
+
+        expect(result).toEqual(fakeRow);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT ra, name FROM students ORDER BY name"
+        );
+    });
+
+    it("deve retornar apenas o primeiro registro do banco", async () => {
+        const fakeRow: IFakeRow[] = [{ ra: 123, name: "Eloah" }, { ra: 132, name: "Thiago" }];
+        mockDb.query.mockResolvedValue({ rows: [fakeRow[0]] });
+
+        const result = await repository.findOne(123);
+
+        expect(result).toEqual(fakeRow[0]);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT ra, name FROM students WHERE ra = $1",
+            [123]
+        );
+    });
+
+    it("deve retornar undefined vazio quando rows é [] e se chama findOne", async () => {
+        const fakeRow: IFakeRow[] = [];
+        mockDb.query.mockResolvedValue({ rows: fakeRow });
+
+        const result = await repository.findOne(123);
+
+        expect(result).toEqual(undefined);
+        expect(mockDb.query).toHaveBeenCalledTimes(1);
+        expect(mockDb.query).toHaveBeenCalledWith(
+            "SELECT ra, name FROM students WHERE ra = $1",
+            [123]
+        );
+    });
+
+    it.each([
+        ["findAll", () => repository.findAll()],
+        ["findOne", () => repository.findOne(123)],
+        ["create", () => repository.create({ ra: 123, name: "Eloah" })]
+    ])(
+        "deve propagar a mesma instância de erro lançada por db.query no método %s",
+        async (nomeMetodo, executarMetodo) => {
+            const error = new Error("Erro");
+            mockDb.query.mockRejectedValue(error);
+
+            await expect(executarMetodo()).rejects.toBe(error);
+        }
+    );
+});
+</file>
+
+<file path="modules/students/students.service.test.ts">
+import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { StudentRepository } from '../../../src/modules/students/students.repository';
+import { StudentsService } from '../../../src/modules/students/students.service';
+
+let mockRepository: jest.Mocked<StudentRepository>;
+let service: StudentsService;
+
+beforeEach(() => {
+    mockRepository = {
+        create: jest.fn(),
+        findAll: jest.fn(),
+        findOne: jest.fn()
+    };
+    service = new StudentsService(mockRepository);
+});
+
+describe("StudentsService.create", () => {
+
+    it("deve chamar repository.create com a entrada e retorno corretos", async () => {
+        const input = { ra: 123, name: "Ana" };
+        mockRepository.create.mockResolvedValue({ ra: 123, name: "Ana" });
+        const result = await service.create(input);
+        expect(result).toEqual({ ra: 123, name: "Ana" });
+        expect(mockRepository.create).toHaveBeenCalledWith(input);
+    });
+
+    it("deve rejeitar a entrada com RA inválido", async () => {
+        await expect(service.create({ ra: 0, name: "Ana" })).rejects.toMatchObject(
+            {
+                statusCode: 400
+            }
+        );
+        expect(mockRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("deve rejeitar a entrada com RA duplicado", async () => {
+        mockRepository.create.mockRejectedValue({ code: "23505" });
+        await expect(service.create({ ra: 123, name: "Ana" })).rejects.toMatchObject(
+            {
+                statusCode: 409
+            }
+        );
+    });
+
+    it("deve propagar a mesma instância de erro lançada pelo repository.create", async () => {
+        const error = new Error("Erro");
+        mockRepository.create.mockRejectedValue(error);
+        await expect(service.create({ ra: 123, name: "Eloah" })).rejects.toBe(error);
+    });
+});
+
+
+describe("StudentsService.findAll", () => {
+    it("deve chamar repository.findAll e retornar o resultado", async () => {
+        const estudantes = [{ ra: 123, name: "Eloah" }, { ra: 132, name: "Thiago" }];
+        mockRepository.findAll.mockResolvedValue(estudantes);
+        const result = await service.findAll();
+        expect(result).toEqual(estudantes);
+        expect(mockRepository.findAll).toHaveBeenCalledWith();
+        expect(mockRepository.findAll).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("StudentsService.findOne", () => {
+    it("deve chamar repository.findOne com o id correto, e retornar o resultado", async () => {
+        const estudante = { ra: 123, name: "Ana" };
+        mockRepository.findOne.mockResolvedValue(estudante);
+        const result = await service.findOne(123);
+        expect(result).toEqual(estudante);
+        expect(mockRepository.findOne).toHaveBeenCalledTimes(1);
+        expect(mockRepository.findOne).toHaveBeenCalledWith(123);
+    });
+
+    it("deve chamar repository.findOne, e retornar erro 404 ao receber undefined", async () => {
+        mockRepository.findOne.mockResolvedValue(undefined);
+        await expect(service.findOne(123)).rejects.toMatchObject({
+            statusCode: 404,
+            message: "Estudante com RA 123 não encontrado."
+        });
+    });
+});
+</file>
+
+<file path="validation.test.ts">
+import { describe, it, expect } from "@jest/globals";
+import { positiveInteger, parseId, validateName, validateBody } from '../src/validation';
+
+describe("positiveInteger", () => {
+  it("deve retornar o número se for válido", () => {
+    expect(positiveInteger(1, "RA")).toBe(1);
+    expect(positiveInteger(2147483647, "RA")).toBe(2147483647);
+  });
+  it.each([0, -1, 1.5, NaN, Infinity, 2147483648, "Eloah", null, undefined])(
+    "deve rejeitar a entrada inválida: %p",
+    (entradaInvalida) => {
+      expect(() => positiveInteger(entradaInvalida, "RA")).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+          message: "RA deve ser um inteiro positivo de até 2147483647.",
+        })
+      );
+    }
+  );
+});
+
+describe("parseId", () => {
+  it("deve retornar o número se for válido", () => {
+    expect(parseId("1", "RA")).toBe(1);
+    expect(parseId("2147483647", "RA")).toBe(2147483647);
+  });
+  it.each(["1abc", "1.2", "1e2", "", "-1", 123])(
+    "deve rejeitar a entrada inválida: %p",
+    (entradaInvalida) => {
+      expect(() => parseId(entradaInvalida, "RA")).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+          message: "RA deve ser um inteiro positivo.",
+        })
+      );
+    }
+  );
+  it.each(["0", "2147483648"])(
+    "deve rejeitar a entrada inválida: %p",
+    (entradaInvalida) => {
+      expect(() => parseId(entradaInvalida, "RA")).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+          message: "RA deve ser um inteiro positivo de até 2147483647.",
+        })
+      );
+    }
+  );
+});
+
+describe("validateName", () => {
+  const a100 = "a".repeat(100);
+  it("deve retornar o nome se for válido", () => {
+    expect(validateName("Ana")).toBe("Ana");
+    expect(validateName(a100)).toBe(a100);
+  });
+  const a101 = "a".repeat(101);
+  it.each(["", "ab", " ", " a ", a101, 123, null, undefined])(
+    "deve rejeitar a entrada inválida: %p",
+    (entradaInvalida) => {
+      expect(() => validateName(entradaInvalida)).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+          message: "O nome deve ter no máximo 100 caracteres e pelo menos 3 caracteres sem contar espaços nas extremidades.",
+        })
+      );
+    }
+  );
+});
+
+describe("validateBody", () => {
+  it("deve retornar o objeto se for válido", () => {
+    const object = Object.freeze({ name: "Ana" });
+    expect(validateBody(object)).toBe(object);
+  });
+  it.each([null, undefined, [], "Ana", 12])(
+    "deve rejeitar a entrada inválida: %p",
+    (entradaInvalida) => {
+      expect(() => validateBody(entradaInvalida)).toThrow(
+        expect.objectContaining({
+          statusCode: 400,
+          message: "O corpo deve ser um objeto JSON.",
+        })
+      );
+    }
+  );
+  it("deve retornar o objeto se for válido, aceitando campos extras", () => {
+    const object = { name: "Ana", extra: true };
+    expect(validateBody(object)).toBe(object);
+  });
+});
+</file>
+
+</files>

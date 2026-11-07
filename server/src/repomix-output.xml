@@ -1,0 +1,575 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+database/
+  connection.ts
+  foreign-key-violation.ts
+  unique-violation.ts
+modules/
+  courses/
+    courses.repository.ts
+    courses.routes.ts
+    courses.service.ts
+  enrollments/
+    enrollments.repository.ts
+    enrollments.routes.ts
+    enrollments.service.ts
+  students/
+    students.repository.ts
+    students.routes.ts
+    students.service.ts
+app.ts
+errors.ts
+main.ts
+validation.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="database/connection.ts">
+import { Pool, type QueryResultRow } from "pg";
+
+// Configura o acesso ao PostgreSQL com as variáveis do ambiente.
+export const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT || 5432),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+});
+
+pool.on("error", (error) => {
+  console.error("Erro na conexão com o PostgreSQL:", error);
+});
+
+// Pool satisfaz esta interface; testes podem fornecer um substituto com query().
+export interface Database {
+  query<T extends QueryResultRow>(sql: string, values?: unknown[]): Promise<{ rows: T[] }>;
+}
+</file>
+
+<file path="database/foreign-key-violation.ts">
+// SQLSTATE 23503: violação de chave estrangeira no PostgreSQL.
+export function isForeignKeyViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  return 'code' in error && error.code === '23503';
+}
+</file>
+
+<file path="database/unique-violation.ts">
+// SQLSTATE 23505: violação de unicidade no PostgreSQL.
+export function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  return 'code' in error && error.code === '23505';
+}
+</file>
+
+<file path="modules/courses/courses.repository.ts">
+import type { Database } from "../../database/connection";
+
+export interface Course {
+  id: number;
+  name: string;
+}
+
+export interface CourseRepository {
+  create(data: { name: string }): Promise<Course>;
+  findAll(): Promise<Course[]>;
+  findOne(id: number): Promise<Course | undefined>;
+}
+
+export class PgCourseRepository implements CourseRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(data: { name: string }) {
+    const { rows } = await this.db.query<Course>(
+      "INSERT INTO courses (name) VALUES ($1) RETURNING id, name",
+      [data.name],
+    );
+    return rows[0];
+  }
+
+  async findAll() {
+    return (
+      await this.db.query<Course>("SELECT id, name FROM courses ORDER BY id")
+    ).rows;
+  }
+
+  async findOne(id: number) {
+    return (
+      await this.db.query<Course>(
+        "SELECT id, name FROM courses WHERE id = $1",
+        [id],
+      )
+    ).rows[0];
+  }
+
+}
+</file>
+
+<file path="modules/courses/courses.routes.ts">
+import { Router } from "express";
+import { parseId } from "../../validation";
+import type { CoursesService } from "./courses.service";
+
+export function coursesRoutes(service: CoursesService) {
+  const router = Router();
+
+  router.get("/", async (_req, res) => {
+    res.json(await service.findAll());
+  });
+
+  router.post("/", async (req, res) => {
+    res.status(201).json(await service.create(req.body));
+  });
+
+  router.get("/:id", async (req, res) => {
+    res.json(await service.findOne(parseId(req.params.id, "id")));
+  });
+
+  
+  return router;
+}
+</file>
+
+<file path="modules/courses/courses.service.ts">
+import { isUniqueViolation } from "../../database/unique-violation";
+import { HttpError } from "../../errors";
+import { positiveInteger, validateBody, validateName } from "../../validation";
+import type { CourseRepository } from "./courses.repository";
+
+export class CoursesService {
+  constructor(private readonly repository: CourseRepository) {}
+
+  async create(input: unknown) {
+    const data = validateBody(input);
+    const name = validateName(data.name);
+
+    try {
+      return await this.repository.create({ name });
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new HttpError(409, "Já existe um curso com este nome.");
+      throw error;
+    }
+  }
+
+  findAll() {
+    return this.repository.findAll();
+  }
+
+  async findOne(id: number) {
+    positiveInteger(id, "id");
+    const record = await this.repository.findOne(id);
+    if (!record)
+      throw new HttpError(404, "Curso com ID " + id + " não encontrado.");
+    return record;
+  }
+  
+}
+</file>
+
+<file path="modules/enrollments/enrollments.repository.ts">
+import type { Database } from "../../database/connection";
+
+export interface Enrollment {
+  studentRa: number;
+  courseId: number;
+  enrolledAt: Date;
+}
+
+export interface EnrollmentRepository {
+  create(studentRa: number, courseId: number): Promise<Enrollment>;
+  findAll(): Promise<Enrollment[]>;
+  findOne(studentRa: number, courseId: number): Promise<Enrollment | undefined>;
+}
+
+export class PgEnrollmentRepository implements EnrollmentRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(studentRa: number, courseId: number) {
+    return (
+      await this.db.query<Enrollment>(
+        `INSERT INTO enrollments (student_ra, course_id) VALUES ($1, $2)
+         RETURNING student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"`,
+        [studentRa, courseId],
+      )
+    ).rows[0];
+  }
+
+  async findAll() {
+    return (
+      await this.db.query<Enrollment>(
+        `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments ORDER BY student_ra, course_id`,
+      )
+    ).rows;
+  }
+
+  async findOne(studentRa: number, courseId: number) {
+    return (
+      await this.db.query<Enrollment>(
+        `SELECT student_ra AS "studentRa", course_id AS "courseId", enrolled_at AS "enrolledAt"
+         FROM enrollments WHERE student_ra = $1 AND course_id = $2`,
+        [studentRa, courseId],
+      )
+    ).rows[0];
+  }
+
+}
+</file>
+
+<file path="modules/enrollments/enrollments.routes.ts">
+import { Router } from "express";
+import { parseId } from "../../validation";
+import type { EnrollmentsService } from "./enrollments.service";
+
+export function enrollmentsRoutes(service: EnrollmentsService) {
+  const router = Router();
+
+  router.get("/", async (_req, res) => {
+    res.json(await service.findAll());
+  });
+
+  router.post("/", async (req, res) => {
+    res.status(201).json(await service.create(req.body));
+  });
+
+  router.get("/student/:studentRa/course/:courseId", async (req, res) => {
+    res.json(
+      await service.findOne(
+        parseId(req.params.studentRa, "RA"),
+        parseId(req.params.courseId, "ID do curso"),
+      ),
+    );
+  });
+
+  
+  return router;
+}
+</file>
+
+<file path="modules/enrollments/enrollments.service.ts">
+import { HttpError } from "../../errors";
+import { positiveInteger, validateBody } from "../../validation";
+import { isUniqueViolation } from "../../database/unique-violation";
+import { isForeignKeyViolation } from "../../database/foreign-key-violation";
+import type { EnrollmentRepository } from "./enrollments.repository";
+
+export class EnrollmentsService {
+  constructor(private readonly repository: EnrollmentRepository) {}
+
+  async create(input: unknown) {
+    const data = validateBody(input);
+    const studentRa = positiveInteger(data.studentRa, "RA");
+    const courseId = positiveInteger(data.courseId, "ID do curso");
+    try {
+      return await this.repository.create(studentRa, courseId);
+    } catch (error) {
+      if (isForeignKeyViolation(error))
+        throw new HttpError(
+          404,
+          "Estudante ou curso não encontrado para realizar a matrícula.",
+        );
+      if (isUniqueViolation(error))
+        throw new HttpError(
+          409,
+          "Este estudante já está matriculado neste curso.",
+        );
+      throw error;
+    }
+  }
+
+  findAll() {
+    return this.repository.findAll();
+  }
+
+  async findOne(studentRa: number, courseId: number) {
+    positiveInteger(studentRa, "RA");
+    positiveInteger(courseId, "ID do curso");
+    const record = await this.repository.findOne(studentRa, courseId);
+    if (!record) throw new HttpError(404, "Matrícula não encontrada.");
+    return record;
+  }
+
+}
+</file>
+
+<file path="modules/students/students.repository.ts">
+import type { Database } from "../../database/connection";
+
+export interface Student {
+  ra: number;
+  name: string;
+}
+
+export interface StudentRepository {
+  create(data: { ra: number; name: string }): Promise<Student>;
+  findAll(): Promise<Student[]>;
+  findOne(id: number): Promise<Student | undefined>;
+}
+
+export class PgStudentRepository implements StudentRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(data: { ra: number; name: string }) {
+    const { rows } = await this.db.query<Student>(
+      "INSERT INTO students (ra, name) VALUES ($1, $2) RETURNING ra, name",
+      [data.ra, data.name],
+    );
+    return rows[0];
+  }
+
+  async findAll() {
+    return (
+      await this.db.query<Student>(
+        "SELECT ra, name FROM students ORDER BY name",
+      )
+    ).rows;
+  }
+
+  async findOne(id: number) {
+    return (
+      await this.db.query<Student>(
+        "SELECT ra, name FROM students WHERE ra = $1",
+        [id],
+      )
+    ).rows[0];
+  }
+
+}
+</file>
+
+<file path="modules/students/students.routes.ts">
+import { Router } from "express";
+import { parseId } from "../../validation";
+import type { StudentsService } from "./students.service";
+
+export function studentsRoutes(service: StudentsService) {
+  const router = Router();
+
+  router.get("/", async (_req, res) => {
+    res.json(await service.findAll());
+  });
+
+  router.post("/", async (req, res) => {
+    res.status(201).json(await service.create(req.body));
+  });
+
+  router.get("/:ra", async (req, res) => {
+    res.json(await service.findOne(parseId(req.params.ra, "ra")));
+  });
+
+  
+  return router;
+}
+</file>
+
+<file path="modules/students/students.service.ts">
+import { HttpError } from "../../errors";
+import { positiveInteger, validateBody, validateName } from "../../validation";
+import { isUniqueViolation } from "../../database/unique-violation";
+import type { StudentRepository } from "./students.repository";
+
+export class StudentsService {
+  constructor(private readonly repository: StudentRepository) {}
+
+  async create(input: unknown) {
+    const data = validateBody(input);
+    const name = validateName(data.name);
+    const ra = positiveInteger(data.ra, "RA");
+    try {
+      return await this.repository.create({ ra, name });
+    } catch (error) {
+      if (isUniqueViolation(error))
+        throw new HttpError(409, "Já existe um estudante com este RA.");
+      throw error;
+    }
+  }
+
+  findAll() {
+    return this.repository.findAll();
+  }
+
+  async findOne(id: number) {
+    positiveInteger(id, "ra");
+    const record = await this.repository.findOne(id);
+    if (!record)
+      throw new HttpError(404, "Estudante com RA " + id + " não encontrado.");
+    return record;
+  }
+
+}
+</file>
+
+<file path="app.ts">
+import express, { type ErrorRequestHandler } from "express";
+import { STATUS_CODES } from "node:http";
+import { HttpError } from "./errors";
+import type { Database } from "./database/connection";
+import { PgStudentRepository } from "./modules/students/students.repository";
+import { PgCourseRepository } from "./modules/courses/courses.repository";
+import { PgEnrollmentRepository } from "./modules/enrollments/enrollments.repository";
+import { StudentsService } from "./modules/students/students.service";
+import { CoursesService } from "./modules/courses/courses.service";
+import { EnrollmentsService } from "./modules/enrollments/enrollments.service";
+import { studentsRoutes } from "./modules/students/students.routes";
+import { coursesRoutes } from "./modules/courses/courses.routes";
+import { enrollmentsRoutes } from "./modules/enrollments/enrollments.routes";
+
+// Criar a aplicação não abre porta nem cria conexões com o banco.
+export function createApp(db: Database) {
+  const app = express();
+  app.use(express.json());
+
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Cada serviço usa um repositório para acessar o banco.
+  const studentRepository = new PgStudentRepository(db);
+  const courseRepository = new PgCourseRepository(db);
+  const enrollmentRepository = new PgEnrollmentRepository(db);
+
+  const studentsService = new StudentsService(studentRepository);
+  const coursesService = new CoursesService(courseRepository);
+  const enrollmentsService = new EnrollmentsService(enrollmentRepository);
+
+  // Encaminha as requisições para as rotas de cada recurso.
+  app.use("/api/students", studentsRoutes(studentsService));
+  app.use("/api/courses", coursesRoutes(coursesService));
+  app.use("/api/enrollments", enrollmentsRoutes(enrollmentsService));
+
+  app.use((_req, _res, next) => {
+    next(new HttpError(404, "Rota não encontrada."));
+  });
+
+  // O Express identifica o tratamento de erros pelos quatro parâmetros.
+  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    let statusCode = 500;
+    let message = "Erro interno do servidor.";
+
+    if (error instanceof HttpError) {
+      statusCode = error.statusCode;
+      message = error.message;
+    } else if (error?.type === "entity.parse.failed") {
+      statusCode = 400;
+      message = "JSON inválido.";
+    } else if (error?.type === "entity.too.large") {
+      statusCode = 413;
+      message = "Corpo da requisição muito grande.";
+    } else {
+      console.error(error);
+    }
+
+    res
+      .status(statusCode)
+      .json({ statusCode, message, error: STATUS_CODES[statusCode] });
+  };
+  app.use(errorHandler);
+
+  return app;
+}
+</file>
+
+<file path="errors.ts">
+// Erro esperado pela aplicação, como dados inválidos ou registro inexistente.
+export class HttpError extends Error {
+  constructor(public readonly statusCode: number, message: string) {
+    super(message);
+  }
+}
+</file>
+
+<file path="main.ts">
+import { createApp } from "./app";
+import { pool } from "./database/connection";
+
+// Cria a aplicação e inicia o servidor HTTP.
+const app = createApp(pool);
+const port = Number(process.env.SERVER_PORT);
+
+app.listen(port, () => {
+  console.log(`API escutando na porta ${port}`);
+});
+</file>
+
+<file path="validation.ts">
+import { HttpError } from './errors';
+
+export function positiveInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > 2147483647) {
+    throw new HttpError(400, field + ' deve ser um inteiro positivo de até 2147483647.');
+  }
+  return value;
+}
+
+export function parseId(value: unknown, field: string): number {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    throw new HttpError(400, field + ' deve ser um inteiro positivo.');
+  }
+  return positiveInteger(Number(value), field);
+}
+
+export function validateName(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length < 3 || value.length > 100) {
+    throw new HttpError(400, 'O nome deve ter no máximo 100 caracteres e pelo menos 3 caracteres sem contar espaços nas extremidades.');
+  }
+  return value;
+}
+
+export function validateBody(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new HttpError(400, 'O corpo deve ser um objeto JSON.');
+  }
+  return value as Record<string, unknown>;
+}
+</file>
+
+</files>
